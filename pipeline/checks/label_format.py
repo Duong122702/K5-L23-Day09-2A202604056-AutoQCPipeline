@@ -24,6 +24,71 @@ Gợi ý
 from ..common import ERROR, WARN, Issue, iou_xywh, parse_yolo_line  # noqa: F401
 
 
+NAME = "label_format"
+
+
+def _overflow(cx, cy, w, h):
+    """Mức tràn lớn nhất ra ngoài [0,1] trên 4 mép (<= 0 nghĩa là nằm trong ảnh)."""
+    left, right = cx - w / 2, cx + w / 2
+    top, bottom = cy - h / 2, cy + h / 2
+    return max(0.0 - left, right - 1.0, 0.0 - top, bottom - 1.0)
+
+
 def run(ds, cfg):
-    # TODO: duyệt từng file nhãn, từng dòng
-    raise NotImplementedError("check label_format chưa làm")
+    p = cfg["label_format"]
+    tol, min_px = p["overflow_tol"], p["min_box_px"]
+    max_frac, dup_iou = p["max_box_frac"], p["dup_box_iou"]
+    n_classes = len(ds.classes)
+
+    issues = []
+    for lab in ds.label_files():
+        stem = lab.stem
+        lines = ds.read_label_lines(stem) or []      # (số dòng gốc, text); dòng trống đã bị bỏ nhưng số dòng giữ nguyên
+        size = ds.image_size(stem) if lines else None  # None: nhãn mồ côi / ảnh hỏng -> bỏ qua BOX_TINY
+        seen = []                                     # (line_no, class_id, box) của các dòng hợp lệ TRƯỚC đó
+
+        for ln, text in lines:
+            # 1) Định dạng: dòng hỏng thì báo và bỏ qua, không crash cả file
+            try:
+                c, cx, cy, w, h = parse_yolo_line(text)
+            except ValueError as e:
+                issues.append(Issue(NAME, ERROR, "BAD_FORMAT", stem, f"sai định dạng: {e}", ln))
+                continue
+            # 2) ID lớp
+            if not 0 <= c < n_classes:
+                issues.append(Issue(NAME, ERROR, "BAD_CLASS_ID", stem,
+                                    f"id lớp {c} ngoài 0..{n_classes - 1}", ln))
+                continue
+            # 3) Box rỗng
+            if w <= 0 or h <= 0:
+                issues.append(Issue(NAME, ERROR, "BOX_ZERO", stem, f"box rỗng w={w} h={h}", ln))
+                continue
+
+            box = (cx, cy, w, h)
+            # 4) Tràn ảnh (một dòng có thể dính nhiều lỗi hình học -> không continue từ đây)
+            over = _overflow(*box)
+            if over > tol:
+                issues.append(Issue(NAME, ERROR, "BOX_OUT_OF_IMAGE", stem,
+                                    f"box tràn ảnh {over:.4f}", ln, {"overflow": round(over, 6)}))
+            # 5) Box lặp: cùng lớp với một dòng trước, IoU > ngưỡng; báo ở dòng sau
+            for prev_ln, prev_c, prev_box in seen:
+                if prev_c == c:
+                    iou = iou_xywh(prev_box, box)
+                    if iou > dup_iou:
+                        issues.append(Issue(NAME, ERROR, "DUP_BOX", stem,
+                                            f"trùng box dòng {prev_ln} (IoU={iou:.3f})", ln,
+                                            {"dup_of": prev_ln, "iou": round(iou, 4)}))
+                        break
+            seen.append((ln, c, box))
+            # 6) Box quá nhỏ: cạnh ngắn tính theo pixel
+            if size:
+                short_px = min(w * size[0], h * size[1])
+                if short_px < min_px:
+                    issues.append(Issue(NAME, WARN, "BOX_TINY", stem,
+                                        f"cạnh ngắn {short_px:.1f}px < {min_px}px", ln,
+                                        {"short_px": round(short_px, 2)}))
+            # 7) Box quá to
+            if w * h > max_frac:
+                issues.append(Issue(NAME, WARN, "BOX_HUGE", stem,
+                                    f"box chiếm {w * h:.0%} ảnh", ln, {"area": round(w * h, 4)}))
+    return issues
