@@ -1,0 +1,19 @@
+{
+  "verdict": {
+    "decision": "Hold",
+    "n_errors": 0,
+    "n_warn_images": 38,
+    "n_images": 202,
+    "warn_ratio": 0.1881,
+    "reasons": [
+      "không còn lỗi bắt buộc, nhưng tỉ lệ ảnh còn cảnh báo chưa duyệt 38/202 ảnh = 18.8% >= ngưỡng 10% -> cần người duyệt thêm",
+      "80 ảnh đã được người duyệt (cảnh báo của chúng coi như đã xử lý)"
+    ]
+  },
+  "reviewed": 80,
+  "budget": 80,
+  "seconds": 5.5,
+  "exported": "C:\\Users\\ASUS\\Desktop\\Lab9\\K5-L23-Day09-2A202604056-AutoQC-Pipeline-Lab\\submission\\export\\clean_v1",
+  "config_sha1": "c4e0d9474f46897d0c27e616751afb0478071969",
+  "review_sim_sha1": "7988ca22827f780a7043a2300490e679a1697154"
+}
