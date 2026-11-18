@@ -64,7 +64,45 @@ Ngoài ra, mỗi bậc của recall MISSING (1,00 → 0,88 → 0,75) chỉ tươ
 4. **`FALSE_POS` nhiễu.** Precision chỉ 0,31 trên calib, và `conf` không lọc được loại này vì nó dùng `fp_conf` cố định. Dù vậy vẫn có cờ đúng: ở `img_0177`, một box "bus" nằm trên mặt biển. Gate chỉ đếm số ảnh, không phân biệt mức nặng nhẹ của cờ.
 
 ## 5. Train: raw vs clean (tùy chọn, chấm riêng)
-**Chưa chạy.** Bản nộp này chỉ làm phần lõi (`check-core`); phần train trên Colab để làm sau.
+Train trên Colab, GPU T4. Model `yolo26n.pt`, **20 epoch**, batch 16, imgsz 640, **seed 0 và 1**. Cả hai biến thể dùng chung val `gold_val` (40 ảnh) và test (100 ảnh nhãn người). Bảng dưới lấy từ `submission/results/comparison.md`:
+
+| biến thể | #ảnh train | số seed | mAP50 | mAP50-95 | precision | recall |
+|---|---|---|---|---|---|---|
+| raw | 224 | 2 | 0.726 ± 0.000 | 0.512 ± 0.004 | 0.764 ± 0.061 | 0.649 ± 0.028 |
+| clean | 202 | 2 | 0.701 ± 0.025 | 0.487 ± 0.008 | 0.759 ± 0.003 | 0.625 ± 0.019 |
+
+**Chênh lệch so với nhiễu.**
+- **mAP50 (clean − raw) = −0,025.** Con số này **bằng đúng độ lệch chuẩn giữa 2 seed của clean** (0,025): clean seed 0 đạt 0,718, seed 1 chỉ 0,683, trong khi raw là 0,726 ở cả hai seed.
+- **mAP50-95** chênh −0,024. Con số này lớn hơn độ lệch chuẩn (0,004 và 0,008), nhưng độ lệch chuẩn ước lượng từ **chỉ 2 điểm** thì không đáng tin.
+- **Kết luận trung thực:** chưa kết luận được rằng `clean` tốt hơn, và cũng chưa đủ bằng chứng để nói `raw` tốt hơn. Chênh lệch nằm trong vùng nhiễu.
+
+**Chênh lệch dồn vào một lớp.** Theo AP50 trung bình 2 seed (`*_seed*.json`):
+
+| Lớp | raw | clean |
+|---|---|---|
+| car | 0,738 | 0,738 |
+| person | 0,822 | 0,823 |
+| bus | 0,695 | 0,703 |
+| **truck** | **0,648** | **0,538** |
+
+Ba lớp đầu gần như bằng nhau. Truck lại là lớp ít box nhất: 24 box trong test, 32 box ở raw và 41 box ở clean. Riêng truck của clean đã dao động **0,590 → 0,486** giữa 2 seed, tức một mức chênh cỡ bằng khoảng cách raw và clean. Vì vậy chênh lệch tổng chủ yếu là **nhiễu của một lớp hiếm**.
+
+Điều đáng chú ý: sau khi người duyệt, clean có **nhiều** box truck hơn raw (41 so với 32), và car giảm từ 122 xuống 101. Nhãn đã được sửa theo hướng của nhãn người, nhưng 20 epoch với khoảng 40 box là quá ít để thấy được lợi ích.
+
+**Nhìn bằng mắt** (`submission/results/predictions_seed0.png`: 6 ảnh test đầu tiên theo tên, seed 0, conf 0,25):
+- Ở ảnh đường phố, raw nhận đúng xe tải vàng là `truck 0.47`, còn clean nhầm thành `bus 0.26`. Đây đúng là kiểu lỗi kéo AP truck của clean xuống.
+- Ngược lại, clean gọn hơn ở 2 ảnh: ảnh bánh mì và ảnh bánh kem, raw ra thêm một box person lớn gần phủ cả ảnh, clean chỉ ra 1 box.
+- Conf của clean thường cao hơn: người trượt tuyết 0,81 → 0,92, ảnh chiếc giày 0,66 → 0,82.
+
+6 ảnh là quá ít để kết luận; chỉ dùng để minh hoạ cho các con số ở trên.
+
+**Giả thuyết và cách kiểm:**
+1. **Rò rỉ test thổi phồng điểm của raw.** raw chứa 5 ảnh trùng với tập test: `test_009`, `033`, `039`, `044`, `085`, gồm 8 car, 12 person và 1 truck (`LEAK_TEST` trong `01_intake`). Như vậy 5% tập test đã nằm trong tập train của raw. *Cách kiểm:* đánh giá lại cả hai model trên 95 ảnh test còn lại, sau khi bỏ 5 ảnh này.
+2. **Khác cả số ảnh lẫn nhãn cùng lúc.** raw có nhiều hơn 22 ảnh, nhưng trong đó có 12 ảnh trùng, 2 ảnh hỏng, 6 ảnh không có file nhãn (Ultralytics coi là ảnh nền) và 6 dòng id lớp lạ. Hai biến số bị trộn với nhau nên không tách được tác động. *Cách kiểm:* train raw chỉ trên đúng 202 ảnh có trong `manifest.json` nhưng giữ nhãn gốc, để chỉ còn nhãn là khác nhau.
+3. **clean chưa thật sự sạch.** Còn 38 ảnh có cảnh báo chưa ai duyệt (Hold), chủ yếu là FALSE_POS và LOOSE_BOX. *Cách kiểm:* thêm biến thể `oracle` (notebook có sẵn) để có giới hạn trên của "dữ liệu sạch".
+4. **Nhiễu do test nhỏ và ít seed.** Mỗi ảnh test đáng khoảng 1%, và truck chỉ có 24 box. *Cách kiểm:* chạy thêm seed 2–4, và bootstrap tập test để có khoảng tin cậy.
+
+**Việc tiếp theo:** chạy lại với ít nhất 3 seed, có biến thể `oracle`, và đánh giá trên tập test đã bỏ 5 ảnh rò rỉ. Sau đó mới đánh giá được lợi ích thật của pipeline.
 
 ## 6. Quyết định và ghi chú AI
 **(a) Quyết định: Hold.** Dataset chưa phát hành; `clean_v1` chỉ dùng để thử nghiệm.
