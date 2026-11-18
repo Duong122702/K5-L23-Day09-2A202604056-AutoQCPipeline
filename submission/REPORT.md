@@ -73,7 +73,7 @@ Ngoài ra, mỗi bậc của recall MISSING (1,00 → 0,88 → 0,75) chỉ tươ
 
 **Không** nâng `conf` lên 0,8 để né Hold: làm vậy chỉ giấu bớt cờ (recall MISSING giảm còn 0,75), chứ không làm nhãn sạch hơn.
 
-**(b) Ghi chú AI.** Dùng Claude Code để viết 4 module và chạy calibrate.
+**(b) Ghi chú AI.** Dùng Claude Code để viết 4 module.
 - **Prompt chính:** "viết `<module>.py`, đọc kỹ docstring trong file", kèm file test. AI đọc docstring, `common.py`, `conftest.py` và test trước khi viết.
 - **Cách kiểm:**
   - đọc diff, xác nhận không xoá hoặc ghi vào `data/raw` và không viết cứng ngưỡng;
